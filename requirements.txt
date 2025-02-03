@@ -1,0 +1,11 @@
+# black
+lightning
+matplotlib
+numpy
+pydicom
+SciencePlots
+tensorboard
+torch
+torchvision
+torchmetrics
+tqdm
