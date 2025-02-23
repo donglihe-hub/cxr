@@ -1,12 +1,15 @@
+import itertools
 import logging
 from pathlib import Path
 
+import cv2
 import lightning as L
 import numpy as np
+import pandas as pd
 import torch
 import tqdm
-from pydicom import dcmread
-from torch.utils.data import Dataset, DataLoader, random_split
+from pydicom.pixels import pixel_array
+from torch.utils.data import Dataset, DataLoader, random_split, Subset
 from torchvision.transforms import v2
 
 logger = logging.getLogger(__name__)
@@ -37,32 +40,41 @@ class CXRDataset(Dataset):
 class CXRBinaryDataModule(L.LightningDataModule):
     def __init__(
         self,
-        data_dir: str = "./data",
+        file_extension: str,
+        data_dir: str,
+        train_len: float | None,
+        val_len: float | None,
+        test_len: float | None,
+        split_file: str | None = None,
         batch_size: int = 32,
         num_workers: int = 4,
-        train_len: float = 0.7,
-        val_len: float = 0.1,
-        test_len: float = 0.2,
         use_pos_weight=False,
     ):
         super().__init__()
+        self.file_extension = file_extension
         self.data_dir = Path(data_dir)
         self.batch_size = batch_size
         self.num_workers = num_workers
 
         self.num_classes = 2
 
-        self.train_len = train_len
-        self.val_len = val_len
-        self.test_len = test_len
+        self.split_file = split_file
+        if split_file:
+            self.train_len = None
+            self.val_len = None
+            self.test_len = None
+        else:
+            self.train_len = train_len
+            self.val_len = val_len
+            self.test_len = test_len
         self.use_pos_weight = use_pos_weight
-
         # the image is expected to have 2 dimensions, i.e., grayscale
         self.transform = v2.Compose(
             [
                 v2.ToImage(),
                 v2.Resize(256),
                 v2.CenterCrop(224),
+                v2.RandomHorizontalFlip(),
                 v2.ToDtype(torch.float32, scale=True),
                 v2.Lambda(
                     lambda x: x.unsqueeze(0) if x.dim() == 2 else x
@@ -76,66 +88,110 @@ class CXRBinaryDataModule(L.LightningDataModule):
 
     def prepare_data(self):
         """Load data from DICOM files and save images as numpy arrays."""
-        if not (self.data_dir / "dcm_data.npz").exists():
-            dcm_paths = list(self.data_dir.glob("**/*.dcm"))
-            normal_dcm_paths = [i for i in dcm_paths if "Normal" in str(i)]
-            abnormal_dcm_paths = [i for i in dcm_paths if "Abnormal" in str(i)]
-
-            normal_dcm_arrays = np.asarray(
-                [
-                    dcmread(i).pixel_array
-                    for i in tqdm.tqdm(
-                        normal_dcm_paths, desc="Loading Normal DICOM files"
-                    )
-                ],
-                dtype=object,
-            )
-
-            abnormal_dcm_arrays = np.asarray(
-                [
-                    dcmread(i).pixel_array
-                    for i in tqdm.tqdm(
-                        abnormal_dcm_paths, desc="Loading Abnormal DICOM files"
-                    )
-                ],
-                dtype=object,
-            )
-
-            images = np.concatenate([normal_dcm_arrays, abnormal_dcm_arrays])
-            labels = np.concatenate(
-                [
-                    np.zeros(len(normal_dcm_arrays)),
-                    np.ones(len(abnormal_dcm_arrays)),
-                ]
-            )
-            np.savez_compressed(self.data_dir / "dcm_data.npz", images=images, labels=labels)
+        ...
 
     def setup(self, stage=None):
         """Load image data and split them into train, validation, and test sets"""
-        self.dcm_data = np.load(
-            self.data_dir / "dcm_data.npz", allow_pickle=True
-        )
-        images = self.dcm_data["images"]
-        labels = self.dcm_data["labels"]
+        if self.file_extension == "dcm":
+            data_paths = list(self.data_dir.glob("**/*.dcm"))
+            images = np.asarray(
+                [
+                    pixel_array(i)
+                    for i in tqdm.tqdm(data_paths, desc="Loading DICOM files")
+                ],
+                dtype=object,
+            )
+            labels = np.array([1 if "Abnormal" in str(i) else 0 for i in data_paths])
+            _, counts = np.unique(labels, return_counts=True)
+            logger.info(
+                f"Normal instances: {counts[0]}; Abnormal instances: {counts[1]}"
+            )
+        elif self.file_extension in ["jpg", "jpeg", "png"]:
+            if self.split_file:
+                splits = pd.read_csv(self.split_file)
+                # hardcoded
+                splits.label = (splits.label == "PNEUMONIA").astype(int)
+                train_data = splits[["filename", "label"]][splits.split == "train"]
+                val_data = splits[["filename", "label"]][splits.split == "val"]
+                test_data = splits[["filename", "label"]][splits.split == "test"]
+                train_images = np.asarray(
+                    [
+                        cv2.imread(i)
+                        for i in tqdm.tqdm(
+                            train_data.filename,
+                            desc=f"Loading {self.file_extension} train files",
+                        )
+                    ],
+                    dtype=object,
+                )
+                val_images = np.asarray(
+                    [
+                        cv2.imread(i)
+                        for i in tqdm.tqdm(
+                            val_data.filename,
+                            desc=f"Loading {self.file_extension} validation files",
+                        )
+                    ],
+                    dtype=object,
+                )
+                test_images = np.asarray(
+                    [
+                        cv2.imread(i)
+                        for i in tqdm.tqdm(
+                            test_data.filename,
+                            desc=f"Loading {self.file_extension} test files",
+                        )
+                    ],
+                    dtype=object,
+                )
 
-        values, counts = np.unique(labels, return_counts=True)
+                images = np.concatenate((train_images, val_images, test_images))
+                labels = np.concatenate(
+                    (train_data.label, val_data.label, test_data.label)
+                )
+                dataset = CXRDataset(images, labels, transform=self.transform)
 
-        logger.info(
-            f"Normal instances: {counts[0]}; Abnormal instances: {counts[1]}"
-        )
+                lengths = [len(train_data), len(val_data), len(test_data)]
+                idx_splits = [
+                    torch.arange(start=offset - length, end=offset)
+                    for offset, length in zip(itertools.accumulate(lengths), lengths)
+                ]
+
+                self.train_dataset = Subset(dataset, idx_splits[0])
+                self.val_dataset = Subset(dataset, idx_splits[1])
+                self.test_dataset = Subset(dataset, idx_splits[2])
+            else:
+                data_paths = list(self.data_dir.glob(f"**/*.{self.file_extension}"))
+                images = np.asarray(
+                    [
+                        cv2.imread(i)
+                        for i in tqdm.tqdm(
+                            data_paths[:5], desc=f"Loading {self.file_extension} files"
+                        )
+                    ],
+                    dtype=object,
+                )
+                labels = np.array(
+                    [1 if "PNEUMONIA" in str(i) else 0 for i in data_paths[:5]]
+                )
+                # _, counts = np.unique(labels, return_counts=True)
+                # logger.info(f"Normal instances: {counts[0]}; Abnormal instances: {counts[1]}")
+        else:
+            raise ValueError(f"File format {self.file_extension} is not supported.")
 
         if self.use_pos_weight:
-            self.pos_weight = counts[0] / counts[1]
+            self.pos_weight = torch.tensor([counts[0] / counts[1]])
             logger.info(f"Positive weight is set to {self.pos_weight}")
         else:
             self.pos_weight = None
 
-        dataset = CXRDataset(images, labels, transform=self.transform)
-        self.test_dataset, self.val_dataset, self.train_dataset = random_split(
-            dataset=dataset,
-            lengths=[self.test_len, self.val_len, self.train_len],
-            generator=torch.Generator().manual_seed(42),
-        )
+        if not self.split_file:
+            dataset = CXRDataset(images, labels, transform=self.transform)
+            self.test_dataset, self.val_dataset, self.train_dataset = random_split(
+                dataset=dataset,
+                lengths=[self.test_len, self.val_len, self.train_len],
+                generator=torch.Generator().manual_seed(42),
+            )
 
     def train_dataloader(self):
         return DataLoader(
@@ -218,9 +274,10 @@ def compute_mean_std_gray(data_module: L.LightningDataModule):
 
 
 def main():
-    dm = CXRBinaryDataModule(data_dir="../data/XR_DICOM")
+    dm = CXRBinaryDataModule("dcm", data_dir="../data/XR_DICOM")
     dm.prepare_data()
-    dm.save_samples()
+    # dm.save_samples()
+
     # mean, std = compute_mean_std_gray(dm)
     # print(f"mean: {mean}, std: {std}")
 

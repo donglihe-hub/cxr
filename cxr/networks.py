@@ -7,23 +7,42 @@ __all__ = [
     "SimpleCNNBaseline",
     "DenseNet",
     "VGG",
+    "EfficientNet",
+    "ResNet",
 ]
 
 
 class SimpleCNNBaseline(nn.Module):
-    def __init__(self, image_size):
+    def __init__(self, num_classes):
         super().__init__()
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.fc1 = nn.Linear(64 * (image_size // 2) * (image_size // 2), 128)
-        self.fc2 = nn.Linear(128, 1)
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1, padding=1)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+        
+        self.fc1 = nn.Linear(in_features=128 * 28 * 28, out_features=512)
+        self.fc2 = nn.Linear(in_features=512, out_features=num_classes)
+        
+        self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = x.view(x.size(0), -1)
+        x = F.relu(self.conv1(x))
+        x = self.pool1(x)
+        
+        x = F.relu(self.conv2(x))
+        x = self.pool2(x)
+        
+        x = F.relu(self.conv3(x))
+        x = self.pool3(x)
+        
+        x = x.view(-1, 128 * 28 * 28)
+        
         x = F.relu(self.fc1(x))
+        x = self.dropout(x)
         x = self.fc2(x)
         return x
 
@@ -47,6 +66,32 @@ class VGG(nn.Module):
         super().__init__()
         assert suffix in ["11", "11_bn", "13", "13_bn", "16", "16_bn", "19", "19_bn"]
         self.network = getattr(torchvision.models, f"vgg{suffix}")(weights=weights)
+        self.network.classifier[-1] = nn.Linear(
+            self.network.classifier[-1].in_features, num_classes
+        )
+
+    def forward(self, x):
+        x = self.network(x)
+        return x
+
+class ResNet(nn.Module):
+    def __init__(self, num_classes, suffix: str = "50", weights="DEFAULT"):
+        super().__init__()
+        assert suffix in ["18", "34", "50", "101", "152"]
+        self.network = getattr(torchvision.models, f"resnet{suffix}")(weights=weights)
+        self.network.fc = nn.Linear(
+            self.network.fc.in_features, num_classes
+        )
+
+    def forward(self, x):
+        x = self.network(x)
+        return x
+    
+class EfficientNet(nn.Module):
+    def __init__(self, num_classes, suffix: str = "b3", weights=None):
+        super().__init__()
+        assert suffix in ["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7"]
+        self.network = getattr(torchvision.models, f"efficientnet_{suffix}")(weights=weights)
         self.network.classifier[-1] = nn.Linear(
             self.network.classifier[-1].in_features, num_classes
         )

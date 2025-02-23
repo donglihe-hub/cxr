@@ -1,0 +1,8 @@
+lr: 0.001
+metric_names:
+- accuracy
+- f1score
+network_name: densenet121
+num_classes: 2
+optimizer_name: adam
+pos_weight: null

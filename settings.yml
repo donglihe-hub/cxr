@@ -1,4 +1,5 @@
 # path to the data directory
+file_extension: dcm
 data_dir: ./data/XR_DICOM
 out_dir: ./outputs
 
@@ -6,13 +7,13 @@ train_len: 0.7
 val_len: 0.1
 test_len: 0.2
 
-num_workers: 8
+num_workers: 0
 batch_size: 32
 
 network: densenet121
 optimizer: adam
 lr: 0.001
-use_pos_weight: True
+use_pos_weight: true
 
 max_epochs: 120
 metrics: [auroc, accuracy, precision, recall, f1score]

@@ -1,0 +1,23 @@
+# path to the data directory
+file_extension: jpeg
+data_dir: ./data/chest_xray/train
+out_dir: ./outputs
+
+# train_len: 0.7
+# val_len: 0.1
+# test_len: 0.2
+split_file: ./data/chest_xray/dataset_split.csv
+
+num_workers: 11
+batch_size: 32
+
+network: efficientnet_7b
+optimizer: adam
+lr: 0.001
+
+max_epochs: 600
+metrics: [accuracy, f1score]
+monitor_metric: loss
+patience: 10
+
+logger: wandb
