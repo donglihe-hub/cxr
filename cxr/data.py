@@ -59,14 +59,10 @@ class CXRBinaryDataModule(L.LightningDataModule):
         self.num_classes = 2
 
         self.split_file = split_file
-        if split_file:
-            self.train_len = None
-            self.val_len = None
-            self.test_len = None
-        else:
-            self.train_len = train_len
-            self.val_len = val_len
-            self.test_len = test_len
+        self.train_len = train_len
+        self.val_len = val_len
+        self.test_len = test_len
+
         self.use_pos_weight = use_pos_weight
         # the image is expected to have 2 dimensions, i.e., grayscale
         self.transform = v2.Compose(
@@ -74,11 +70,10 @@ class CXRBinaryDataModule(L.LightningDataModule):
                 v2.ToImage(),
                 v2.Resize(256),
                 v2.CenterCrop(224),
-                v2.RandomHorizontalFlip(),
                 v2.ToDtype(torch.float32, scale=True),
                 v2.Lambda(
                     lambda x: x.unsqueeze(0) if x.dim() == 2 else x
-                ),  # Add channel dim if missing
+                ),  # Add channel dim to the first axis if missing
                 v2.Lambda(
                     lambda x: x.repeat(3, 1, 1) if x.size(0) == 1 else x
                 ),  # convert image with 1 channel to 3 channels

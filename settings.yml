@@ -7,15 +7,17 @@ train_len: 0.7
 val_len: 0.1
 test_len: 0.2
 
-num_workers: 0
+num_workers: 11
 batch_size: 32
 
-network: densenet121
+network: efficientnet_b7
 optimizer: adam
 lr: 0.001
-use_pos_weight: true
+use_pos_weight: false
 
 max_epochs: 120
 metrics: [auroc, accuracy, precision, recall, f1score]
-monitor_metric: loss
-patience: 60
+monitor_metric: f1score
+patience: 30
+
+logger: tensorboard

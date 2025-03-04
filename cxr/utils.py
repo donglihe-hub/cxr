@@ -1,7 +1,7 @@
 import re
 
 import torchmetrics
-from .networks import SimpleCNNBaseline, DenseNet, VGG, ResNet, EfficientNet
+from .networks import VinillaCNN, DenseNet, VGG, ResNet, EfficientNet
 
 
 def get_network(network_name: str, num_classes: int, task="binary"):
@@ -12,8 +12,7 @@ def get_network(network_name: str, num_classes: int, task="binary"):
     if task == "binary":
         num_classes = 1
     if re.match("cnn", network_name, flags=re.I):
-        return SimpleCNNBaseline(num_classes=num_classes)
-        # return SimpleCNNBaseline(network_config["image_size"])
+        return VinillaCNN(num_classes=num_classes)
     elif re.match("densenet", network_name, flags=re.I):
         return DenseNet(
             num_classes=num_classes,
@@ -31,7 +30,8 @@ def get_network(network_name: str, num_classes: int, task="binary"):
         )
     elif re.match("vgg", network_name, flags=re.I):
         return VGG(
-            num_classes=num_classes, suffix=re.search("(?<=vgg).+", network_name, flags=re.I)[0]
+            num_classes=num_classes,
+            suffix=re.search("(?<=vgg).+", network_name, flags=re.I)[0],
         )
     else:
         raise ValueError(f"Network {network_name} is not supported by us")

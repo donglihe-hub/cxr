@@ -1,6 +1,9 @@
 import re
 
 import lightning as L
+from lightning.fabric import Fabric
+
+fabric = Fabric()
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -17,8 +20,8 @@ class CXRModule(L.LightningModule):
     def __init__(
         self,
         network_name: str,
-        metric_names: list[str],
         num_classes: int,
+        metric_names: list[str],
         optimizer_name: str = "Adam",
         lr: float = 1e-3,
         pos_weight: torch.Tensor | None = None,
@@ -35,9 +38,9 @@ class CXRModule(L.LightningModule):
         self.train_metrics = get_metrics(metric_names, task="binary", prefix="train_")
         self.val_metrics = self.train_metrics.clone(prefix="val_")
 
-        # hardcoded
-        self.test_y_hat = []
-        self.test_y = []
+        # # hardcoded
+        # self.test_y_hat = []
+        # self.test_y = []
 
     def on_fit_start(self):
         if self.pos_weight is not None:
@@ -69,12 +72,12 @@ class CXRModule(L.LightningModule):
 
     def on_test_start(self):
         self.test_metrics = self.train_metrics.clone(prefix="test_")
-        # hardcoded
-        from torchmetrics import ConfusionMatrix
+        # # hardcoded
+        # from torchmetrics import ConfusionMatrix
 
-        self.confusion_matrix = ConfusionMatrix("binary").to(self.device)
-        self.test_y_hat = []
-        self.test_y = []
+        # self.confusion_matrix = ConfusionMatrix("binary").to(self.device)
+        # self.test_y_hat = []
+        # self.test_y = []
 
         if self.pos_weight is not None:
             self.pos_weight = self.pos_weight.to(self.device)
@@ -86,25 +89,25 @@ class CXRModule(L.LightningModule):
         loss = F.binary_cross_entropy_with_logits(preds, y, pos_weight=self.pos_weight)
         if "loss" in self.metric_names:
             self.log("test_loss", loss)
-        # hardcoded
-        self.test_y.append(y.detach().cpu().numpy())
-        self.test_y_hat.append(torch.sigmoid(preds).detach().cpu().numpy())
-        self.confusion_matrix.update(torch.sigmoid(preds), y)
+        # # hardcoded
+        # self.test_y.append(y.detach().cpu().numpy())
+        # self.test_y_hat.append(torch.sigmoid(preds).detach().cpu().numpy())
+        # self.confusion_matrix.update(torch.sigmoid(preds), y)
 
         self.test_metrics.update(torch.sigmoid(preds), y)
 
     def on_test_epoch_end(self):
         self.log_dict(self.test_metrics.compute())
-        # hardcoded
-        self.test_y = np.concatenate(self.test_y)
-        self.test_y_hat = (np.concatenate(self.test_y_hat) > 0.5).astype(int)
-        print(
-            f"sklearn: {sklearn.metrics.confusion_matrix(self.test_y, self.test_y_hat)}"
-        )
-        print(self.confusion_matrix.compute())
-        self.test_y_hat = []
-        self.test_y = []
-        self.confusion_matrix.reset()
+        # # hardcoded
+        # self.test_y = np.concatenate(self.test_y)
+        # self.test_y_hat = (np.concatenate(self.test_y_hat) > 0.5).astype(int)
+        # print(
+        #     f"sklearn: {sklearn.metrics.confusion_matrix(self.test_y, self.test_y_hat)}"
+        # )
+        # print(self.confusion_matrix.compute())
+        # self.test_y_hat = []
+        # self.test_y = []
+        # self.confusion_matrix.reset()
         self.test_metrics.reset()
 
     def configure_optimizers(self):

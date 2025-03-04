@@ -12,5 +12,4 @@ torch
 torchvision
 torchmetrics
 tqdm
-
-# wandb
+wandb

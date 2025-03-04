@@ -11,7 +11,7 @@ split_file: ./data/chest_xray/dataset_split.csv
 num_workers: 11
 batch_size: 32
 
-network: efficientnet_7b
+network: vgg19_bn
 optimizer: adam
 lr: 0.001
 
