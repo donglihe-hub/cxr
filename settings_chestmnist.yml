@@ -1,0 +1,22 @@
+# path to the data directory
+data_dir: chestmnist
+out_dir: ./outputs
+
+train_len: 0.7
+val_len: 0.1
+test_len: 0.2
+
+num_workers: 12
+batch_size: 32
+
+network: nonlinear
+optimizer: adam
+lr: 0.01
+use_pos_weight: true
+
+max_epochs: 200
+metrics: [auroc, accuracy, precision, recall, f1score]
+monitor_metric: f1score
+patience: 30
+
+logger: tensorboard
