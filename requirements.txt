@@ -15,3 +15,4 @@ torchvision
 torchmetrics
 tqdm
 wandb
+grad-cam

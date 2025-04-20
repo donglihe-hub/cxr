@@ -53,7 +53,7 @@ class HybridModel(nn.Module):
         self.layer_norm_cnn = nn.LayerNorm(cnn_prev_dim)
         self.layer_norm_transformer = nn.LayerNorm(transformer_prev_dim)
         layers = []
-        dropout = 0.3
+        dropout = 0.2
         for size in hidden_layer_sizes:
             fc = nn.Linear(prev_dim, size)
             nn.init.kaiming_uniform_(fc.weight)
@@ -63,6 +63,7 @@ class HybridModel(nn.Module):
             layers.append(nn.Dropout(dropout))
             prev_dim = size
         self.mlp = nn.Sequential(*layers) if layers else nn.Identity()
+        self.dropout = nn.Dropout(dropout)
         self.output = nn.Linear(in_features=prev_dim, out_features=num_classes)
         nn.init.kaiming_uniform_(self.output.weight)
 
@@ -74,6 +75,7 @@ class HybridModel(nn.Module):
         x = torch.cat((x_1, x_2), dim=1)
         x = self.layer_norm(x)
         x = self.mlp(x)
+        x = self.dropout(x)
         x = self.output(x)
         return x
 
@@ -243,7 +245,7 @@ class DenseNet(nn.Module):
         self.network.classifier = nn.Identity()
 
         layers = []
-        dropout = 0.2
+        dropout = 0.4
         for size in hidden_layer_sizes:
             fc = nn.Linear(prev_dim, size)
             nn.init.kaiming_uniform_(fc.weight)
@@ -253,12 +255,14 @@ class DenseNet(nn.Module):
             layers.append(nn.Dropout(dropout))
             prev_dim = size
         self.mlp = nn.Sequential(*layers) if layers else nn.Identity()
+        self.dropout = nn.Dropout(dropout)
         self.output = nn.Linear(in_features=prev_dim, out_features=num_classes)
         nn.init.kaiming_uniform_(self.output.weight)
 
     def forward(self, x):
         x = self.network(x)
         x = self.mlp(x)
+        x = self.dropout(x)
         x = self.output(x)
         return x
 
@@ -331,12 +335,14 @@ class EfficientNet(nn.Module):
             layers.append(nn.Dropout(dropout))
             prev_dim = size
         self.mlp = nn.Sequential(*layers) if layers else nn.Identity()
+        self.dropout = nn.Dropout(dropout)
         self.output = nn.Linear(in_features=prev_dim, out_features=num_classes)
         nn.init.kaiming_uniform_(self.output.weight)
 
     def forward(self, x):
         x = self.network(x)
         x = self.mlp(x)
+        x = self.dropout(x)
         x = self.output(x)
 
         return x

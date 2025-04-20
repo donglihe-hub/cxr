@@ -10,6 +10,7 @@ import torch.optim as optim
 from torch import nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR
 
+
 from .utils import get_network, get_metrics
 
 
@@ -29,7 +30,8 @@ class CXRModule(L.LightningModule):
         self.lr = lr
         self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-        self.model = get_network(network_name, num_classes)
+        self.model = get_network(network_name, num_classes)        
+        # for hybrid and efficientnet_b2 only
         self.metric_names = metric_names
         self.num_classes = num_classes
         self.train_metrics = get_metrics(metric_names, task="binary", prefix="train_")

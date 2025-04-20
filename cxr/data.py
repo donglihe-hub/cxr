@@ -229,6 +229,7 @@ class CXRBinaryDataModule(L.LightningDataModule):
             )
         elif self.data_dir in ["chestmnist"]:
             import medmnist
+            ...
 
             
         else:
@@ -253,8 +254,9 @@ class CXRBinaryDataModule(L.LightningDataModule):
                 self.test_dataset, self.val_dataset, self.train_dataset = random_split(
                     dataset=dataset,
                     lengths=[self.test_len, self.val_len, self.train_len],
-                    generator=torch.Generator().manual_seed(42),
+                    generator=torch.Generator().manual_seed(0),
                 )
+                # 0, 42, 1024, 65536, 4294967296
                 self.train_dataset.transform = self.train_transform
 
     def train_dataloader(self):

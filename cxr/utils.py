@@ -21,7 +21,7 @@ from .networks import (
     )
 
 
-def get_network(network_name: str, num_classes: int, task="binary"):
+def get_network(network_name: str, num_classes: int, task="binary", hidden_layer_sizes=[]):
     # pattern = re.compile(rf"{network_name}$", flags=re.I)
     # match = [valid_network_name for valid_network_name in networks.__all__ if pattern.match(valid_network_name)]
     # if not match:
@@ -33,31 +33,31 @@ def get_network(network_name: str, num_classes: int, task="binary"):
     elif re.match("^densenet", network_name, flags=re.I):
         return DenseNet(
             num_classes=num_classes,
-            hidden_layer_sizes = [512, 128],
+            hidden_layer_sizes = hidden_layer_sizes,
             suffix=re.search("(?<=densenet).+", network_name, flags=re.I)[0],
         )
     elif re.match("^resnet", network_name, flags=re.I):
         return ResNet(
             num_classes=num_classes,
-            hidden_layer_sizes = [512, 128],
+            hidden_layer_sizes = hidden_layer_sizes,
             suffix=re.search("(?<=resnet).+", network_name, flags=re.I)[0],
         )
     elif re.match("^efficientnet_v2", network_name, flags=re.I):
         return EfficientNetV2(
             num_classes=num_classes,
-            hidden_layer_sizes = [512, 128],
+            hidden_layer_sizes = hidden_layer_sizes,
             suffix=re.search("(?<=efficientnet_v2_).+", network_name, flags=re.I)[0],
         )
     elif re.match("^efficientnet", network_name, flags=re.I):
         return EfficientNet(
             num_classes=num_classes,
-            hidden_layer_sizes = [512, 128],
+            hidden_layer_sizes = hidden_layer_sizes,
             suffix=re.search("(?<=efficientnet_).+", network_name, flags=re.I)[0],
         )
     elif re.match("^vgg", network_name, flags=re.I):
         return VGG(
             num_classes=num_classes,
-            hidden_layer_sizes = [512, 128],
+            hidden_layer_sizes = hidden_layer_sizes,
             suffix=re.search("(?<=vgg).+", network_name, flags=re.I)[0],
         )
     elif re.match("^linear", network_name, flags=re.I):
@@ -67,7 +67,7 @@ def get_network(network_name: str, num_classes: int, task="binary"):
         )
     elif re.match("^nonlinear", network_name, flags=re.I):
         return NonLinearClassifier(
-            hidden_layer_sizes = [512, 128],
+            hidden_layer_sizes = hidden_layer_sizes,
             num_classes=num_classes,
         )
     elif re.match("^medvit", network_name, flags=re.I):
@@ -78,7 +78,7 @@ def get_network(network_name: str, num_classes: int, task="binary"):
     elif re.match("^hybrid", network_name, flags=re.I):
         return HybridModel(
             num_classes=num_classes,
-            hidden_layer_sizes = [512, 128],
+            hidden_layer_sizes = [],
         )
     # elif re.match("^vit", network_name, flags=re.I):
     #     return VisionTransformer(

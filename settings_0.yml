@@ -10,7 +10,7 @@ test_len: 0.2
 num_workers: 12
 batch_size: 32
 
-network: hybrid
+network: efficientnet_b2
 optimizer: adam
 lr: 0.001
 use_pos_weight: true
