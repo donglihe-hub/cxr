@@ -1,8 +1,8 @@
 # Chest X Ray Classification
-This is the repository for HC701 at MBZUAI.
+This is the repository for the course project of HC701 at MBZUAI.
 
 # Run
-configure basic parameters in settings.yml
+configure basic parameters in settings_*.yml
 ```sh
 python train.py --config settings_0.yml
 ```
