@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 
 import cv2
+import torchvision.transforms as transforms
 import lightning as L
 import numpy as np
 import pandas as pd
@@ -24,8 +25,10 @@ class CXRDataset(Dataset):
         self.labels = labels
         self.transform = transform
 
+        assert len(images) == len(labels), "Images and labels must have the same length"
+
     def __len__(self):
-        return len(self.images)
+        return len(self.labels)
 
     def __getitem__(self, idx):
         image = self.images[idx]
@@ -36,6 +39,21 @@ class CXRDataset(Dataset):
 
         return image, label
 
+class EmbeddingDataset(Dataset):
+    def __init__(self, embeddings, labels):
+        self.embeddings = embeddings
+        self.labels = labels
+
+        assert len(embeddings) == len(labels), "Embeddings and labels must have the same length"
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        embedding = self.embeddings[idx]
+        label = self.labels[idx]
+
+        return embedding, label
 
 class CXRBinaryDataModule(L.LightningDataModule):
     def __init__(
@@ -81,6 +99,36 @@ class CXRBinaryDataModule(L.LightningDataModule):
             ]
         )
 
+        # preprocessing
+        self.train_transform = transforms.Compose([
+            v2.ToImage(),
+            v2.Resize(256),
+            v2.CenterCrop(224),
+            v2.Lambda(
+                lambda x: x.unsqueeze(0) if x.dim() == 2 else x
+            ),  # Add channel dim to the first axis if missing
+            v2.Lambda(
+                lambda x: x.repeat(3, 1, 1) if x.size(0) == 1 else x
+            ),  # convert image with 1 channel to 3 channels
+            v2.AugMix(),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize(mean=[.5], std=[.5])
+        ])
+        
+        self.test_transform = transforms.Compose([
+            v2.ToImage(),
+            v2.Resize(256),
+            v2.CenterCrop(224),
+            v2.Lambda(
+                lambda x: x.unsqueeze(0) if x.dim() == 2 else x
+            ),  # Add channel dim to the first axis if missing
+            v2.Lambda(
+                lambda x: x.repeat(3, 1, 1) if x.size(0) == 1 else x
+            ),  # convert image with 1 channel to 3 channels
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Normalize(mean=[.5], std=[.5])
+        ])
+
     def prepare_data(self):
         """Load data from DICOM files and save images as numpy arrays."""
         ...
@@ -88,7 +136,7 @@ class CXRBinaryDataModule(L.LightningDataModule):
     def setup(self, stage=None):
         """Load image data and split them into train, validation, and test sets"""
         if self.file_extension == "dcm":
-            data_paths = list(self.data_dir.glob("**/*.dcm"))
+            data_paths = sorted(self.data_dir.glob("**/*.dcm"))
             images = np.asarray(
                 [
                     pixel_array(i)
@@ -98,7 +146,7 @@ class CXRBinaryDataModule(L.LightningDataModule):
             )
             labels = np.array([1 if "Abnormal" in str(i) else 0 for i in data_paths])
             _, counts = np.unique(labels, return_counts=True)
-            logger.info(
+            print(
                 f"Normal instances: {counts[0]}; Abnormal instances: {counts[1]}"
             )
         elif self.file_extension in ["jpg", "jpeg", "png"]:
@@ -167,10 +215,22 @@ class CXRBinaryDataModule(L.LightningDataModule):
                     dtype=object,
                 )
                 labels = np.array(
-                    [1 if "PNEUMONIA" in str(i) else 0 for i in data_paths[:5]]
+                    [1 if "PNEUMONIA" in str(i) else 0 for i in data_paths]
                 )
                 # _, counts = np.unique(labels, return_counts=True)
                 # logger.info(f"Normal instances: {counts[0]}; Abnormal instances: {counts[1]}")
+        elif self.file_extension in ["npy", "npz"]:
+            data_paths = sorted(self.data_dir.glob(f"**/*_general.{self.file_extension}"))
+            embeddings = [np.load(i).astype(np.float32) for i in tqdm.tqdm(data_paths, desc="Loading embedding files")]
+            labels = np.array([1 if "Abnormal" in str(i) else 0 for i in data_paths])
+            _, counts = np.unique(labels, return_counts=True)
+            print(
+                f"Normal instances: {counts[0]}; Abnormal instances: {counts[1]}"
+            )
+        elif self.data_dir in ["chestmnist"]:
+            import medmnist
+
+            
         else:
             raise ValueError(f"File format {self.file_extension} is not supported.")
 
@@ -181,12 +241,21 @@ class CXRBinaryDataModule(L.LightningDataModule):
             self.pos_weight = None
 
         if not self.split_file:
-            dataset = CXRDataset(images, labels, transform=self.transform)
-            self.test_dataset, self.val_dataset, self.train_dataset = random_split(
-                dataset=dataset,
-                lengths=[self.test_len, self.val_len, self.train_len],
-                generator=torch.Generator().manual_seed(42),
-            )
+            if self.file_extension in ["npy", "npz"]:
+                dataset = EmbeddingDataset(embeddings, labels)
+                self.test_dataset, self.val_dataset, self.train_dataset = random_split(
+                    dataset=dataset,
+                    lengths=[self.test_len, self.val_len, self.train_len],
+                    generator=torch.Generator().manual_seed(42),
+                )
+            else:
+                dataset = CXRDataset(images, labels, transform=self.test_transform)
+                self.test_dataset, self.val_dataset, self.train_dataset = random_split(
+                    dataset=dataset,
+                    lengths=[self.test_len, self.val_len, self.train_len],
+                    generator=torch.Generator().manual_seed(42),
+                )
+                self.train_dataset.transform = self.train_transform
 
     def train_dataloader(self):
         return DataLoader(

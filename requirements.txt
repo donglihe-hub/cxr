@@ -6,8 +6,10 @@ numpy
 opencv-python
 pandas
 pydicom
+pypng
 SciencePlots
 tensorboard
+timm
 torch
 torchvision
 torchmetrics

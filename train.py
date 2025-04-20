@@ -108,8 +108,9 @@ def main():
     # model = torch.compile(model)
 
     # callbacks
-    run_id = f"{settings.network}_{datetime.datetime.now().strftime('%Y/%m/%d-%H:%M:%S')}"
+    run_id = f"{settings.network}_{settings.use_pos_weight}_{datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}"
     out_dir = settings.out_dir / run_id
+    print(out_dir)
     monitor_metric = f"val_{settings.monitor_metric}"
     mode = "min" if settings.monitor_metric == "loss" else "max"
     callbacks = [
@@ -119,7 +120,7 @@ def main():
             patience=settings.patience,
         ),
         ModelCheckpoint(
-            dirpath=settings.out_dir / "checkpoints",
+            dirpath=out_dir / "checkpoints",
             filename=f"{{epoch}}-{{{monitor_metric}:.2f}}",
             save_last=True,
             save_top_k=1,
@@ -133,9 +134,9 @@ def main():
 
     # logger
     if settings.logger == "wandb":
-        logger = WandbLogger(name="wandb_log", save_dir=out_dir)
+        logger = WandbLogger(name=run_id, save_dir=out_dir)
     elif settings.logger == "tensorboard":
-        logger = TensorBoardLogger(name="tensorboard_log", save_dir=out_dir)
+        logger = TensorBoardLogger(name=run_id, save_dir=out_dir)
     else:
         logger = None
     
@@ -146,8 +147,10 @@ def main():
         max_epochs=settings.max_epochs,
         callbacks=callbacks,
         num_sanity_val_steps=0,
+        deterministic=True,
         log_every_n_steps=min(50, math.ceil(len(data_module.train_dataset.indices) / settings.batch_size)),
     )
+    torch.use_deterministic_algorithms(True, warn_only=True)
 
     trainer.fit(
         model,

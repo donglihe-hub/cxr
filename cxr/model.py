@@ -7,11 +7,8 @@ fabric = Fabric()
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-
-import sklearn
-import numpy as np
+from torch import nn
+from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR
 
 from .utils import get_network, get_metrics
 
@@ -30,7 +27,7 @@ class CXRModule(L.LightningModule):
         self.save_hyperparameters()
         self.optimizer_name = optimizer_name
         self.lr = lr
-        self.pos_weight = pos_weight
+        self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
         self.model = get_network(network_name, num_classes)
         self.metric_names = metric_names
@@ -38,31 +35,24 @@ class CXRModule(L.LightningModule):
         self.train_metrics = get_metrics(metric_names, task="binary", prefix="train_")
         self.val_metrics = self.train_metrics.clone(prefix="val_")
 
-        # # hardcoded
-        # self.test_y_hat = []
-        # self.test_y = []
-
-    def on_fit_start(self):
-        if self.pos_weight is not None:
-            self.pos_weight = self.pos_weight.to(self.device)
-
     def training_step(self, batch, batch_idx):
         x, y = batch
         y = y.unsqueeze(1).float()
         preds = self(x)
-        loss = F.binary_cross_entropy_with_logits(preds, y, pos_weight=self.pos_weight)
+        loss = self.loss_fn(preds, y)
         self.log("train_loss", loss, prog_bar=True)
         self.log_dict(self.train_metrics(torch.sigmoid(preds), y))
         return loss
 
     def on_train_epoch_end(self):
+        self.log_dict(self.train_metrics.compute())
         self.train_metrics.reset()
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y = y.unsqueeze(1).float()
         preds = self(x)
-        loss = F.binary_cross_entropy_with_logits(preds, y, pos_weight=self.pos_weight)
+        loss = self.loss_fn(preds, y)
         self.log("val_loss", loss)
         self.val_metrics.update(torch.sigmoid(preds), y)
 
@@ -72,42 +62,19 @@ class CXRModule(L.LightningModule):
 
     def on_test_start(self):
         self.test_metrics = self.train_metrics.clone(prefix="test_")
-        # # hardcoded
-        # from torchmetrics import ConfusionMatrix
-
-        # self.confusion_matrix = ConfusionMatrix("binary").to(self.device)
-        # self.test_y_hat = []
-        # self.test_y = []
-
-        if self.pos_weight is not None:
-            self.pos_weight = self.pos_weight.to(self.device)
 
     def test_step(self, batch, batch_idx):
         x, y = batch
         y = y.unsqueeze(1).float()
         preds = self(x)
-        loss = F.binary_cross_entropy_with_logits(preds, y, pos_weight=self.pos_weight)
+        loss = self.loss_fn(preds, y)
         if "loss" in self.metric_names:
             self.log("test_loss", loss)
-        # # hardcoded
-        # self.test_y.append(y.detach().cpu().numpy())
-        # self.test_y_hat.append(torch.sigmoid(preds).detach().cpu().numpy())
-        # self.confusion_matrix.update(torch.sigmoid(preds), y)
 
         self.test_metrics.update(torch.sigmoid(preds), y)
 
     def on_test_epoch_end(self):
         self.log_dict(self.test_metrics.compute())
-        # # hardcoded
-        # self.test_y = np.concatenate(self.test_y)
-        # self.test_y_hat = (np.concatenate(self.test_y_hat) > 0.5).astype(int)
-        # print(
-        #     f"sklearn: {sklearn.metrics.confusion_matrix(self.test_y, self.test_y_hat)}"
-        # )
-        # print(self.confusion_matrix.compute())
-        # self.test_y_hat = []
-        # self.test_y = []
-        # self.confusion_matrix.reset()
         self.test_metrics.reset()
 
     def configure_optimizers(self):
@@ -124,7 +91,9 @@ class CXRModule(L.LightningModule):
         self.optimizer_name = match[0]
 
         optimizer = getattr(optim, self.optimizer_name)(self.parameters(), lr=self.lr)
-        scheduler = ReduceLROnPlateau(optimizer)
+        scheduler = ReduceLROnPlateau(optimizer, patience=5, factor=0.5)
+        # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
+
 
         return {
             "optimizer": optimizer,
