@@ -7,5 +7,17 @@ configure basic parameters in settings_*.yml
 python train.py --config settings_0.yml
 ```
 
+For cross validation, run
+```sh
+python cross_validation.py --config cross_validation.yml
+```
+
+for batch run, input
+```sh
+bash run.sh
+```
+
+
+
 # Test Results
 We record all the results in [Google Sheet](https://docs.google.com/spreadsheets/d/1e34zxT61SycYPSW_KuU2bb4B11f4VzrehomzIftKYb4/edit?usp=sharing)
