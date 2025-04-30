@@ -39,45 +39,223 @@ class TimmModel(nn.Module):
         # x = self.output(x)
         return x
     
+class SelfAttention(nn.Module):
+    def __init__(self, cnn_dim=1407, trans_dim=768, num_heads=8):
+        super().__init__()
+        self.hidden_dim = trans_dim
+        self.num_heads = num_heads
+
+        self.cnn_proj = nn.Conv2d(cnn_dim, self.hidden_dim, kernel_size=1)
+        self.trans_proj = nn.Conv2d(trans_dim, self.hidden_dim, kernel_size=1)
+
+        self.norm1 = nn.LayerNorm(self.hidden_dim)
+
+        self.attn = nn.MultiheadAttention(embed_dim=self.hidden_dim, num_heads=num_heads, batch_first=True)
+
+        self.norm2 = nn.LayerNorm(self.hidden_dim)
+
+    def forward(self, cnn_feat, transformer_feat):
+        B, _, H, W = cnn_feat.shape
+
+        cnn_feat_proj = self.cnn_proj(cnn_feat) # [B, T, H, W]
+        trans_feat_proj = self.trans_proj(transformer_feat) # [B, T, H', W']
+    
+        cnn_tokens = cnn_feat_proj.flatten(2).transpose(1, 2)     # [B, H * W, T]
+        trans_tokens = trans_feat_proj.flatten(2).transpose(1, 2) # [B, H' * W', T]
+
+        tokens = torch.cat([cnn_tokens, trans_tokens], dim=1)
+
+        tokens = self.norm1(tokens)
+
+        # CNN attends to Transformer
+        attn_out, _ = self.attn(query=tokens, key=tokens, value=tokens) # [B, H * W, T]
+
+        tokens = self.norm2(tokens + attn_out) 
+
+        fused = tokens[:, :cnn_tokens.size(1), :]  # [B, N1, C]
+        fused = fused.transpose(1, 2).view(B, self.hidden_dim, H, W)
+
+        return fused
+
+class CrossAttention(nn.Module):
+    def __init__(self, cnn_dim=1407, trans_dim=768, num_heads=8):
+        super().__init__()
+        self.hidden_dim = trans_dim
+        self.num_heads = num_heads
+
+        self.cnn_proj = nn.Conv2d(cnn_dim, self.hidden_dim, kernel_size=1)
+        self.trans_proj = nn.Conv2d(trans_dim, self.hidden_dim, kernel_size=1)
+
+        self.attn = nn.MultiheadAttention(embed_dim=self.hidden_dim, num_heads=num_heads, batch_first=True)
+
+    def forward(self, cnn_feat, transformer_feat):
+        B, _, H, W = cnn_feat.shape
+
+        cnn_feat_proj = self.cnn_proj(cnn_feat) # [B, T, H, W]
+        trans_feat_proj = self.trans_proj(transformer_feat) # [B, T, H', W']
+    
+        cnn_tokens = cnn_feat_proj.flatten(2).transpose(1, 2)     # [B, H * W, T]
+        trans_tokens = trans_feat_proj.flatten(2).transpose(1, 2) # [B, H' * W', T]
+
+        # CNN attends to Transformer
+        attn_output, _ = self.attn(query=cnn_tokens, key=trans_tokens, value=trans_tokens) # [B, H * W, T]
+
+        # residual connection
+        fused = attn_output + cnn_tokens
+
+        fused = fused.transpose(1, 2).view(B, self.hidden_dim, H, W) # [B, T, H, W]
+
+        return fused
+
+class Hybrid2Model(nn.Module):
+    def __init__(self, num_classes, hidden_layer_sizes):
+        super().__init__()
+        self.transformer = timm.create_model("tiny_vit_21m_224.dist_in22k_ft_in1k", pretrained=True, num_classes=0)
+        trans_prev_dim = 576
+        self.cnn = getattr(torchvision.models, f"efficientnet_b0")(weights="DEFAULT")
+        cnn_prev_dim = self.cnn.classifier[-1].in_features
+        self.cnn.classifier = nn.Identity()
+        # concat
+        # prev_dim = transformer_prev_dim + cnn_prev_dim
+        prev_dim = cnn_prev_dim
+        self.layer_norm = nn.LayerNorm(prev_dim)
+        layers = []
+        dropout = 0.2
+        self.attention = SelfAttention(cnn_dim=trans_prev_dim, trans_dim=cnn_prev_dim)
+        # for size in hidden_layer_sizes:
+        #     fc = nn.Linear(prev_dim, size)
+        #     nn.init.kaiming_uniform_(fc.weight)
+        #     layers.append(fc)
+        #     layers.append(nn.ReLU())
+        #     layers.append(nn.BatchNorm1d(size))
+        #     layers.append(nn.Dropout(dropout))
+        #     prev_dim = size
+        # self.mlp = nn.Sequential(*layers) if layers else nn.Identity()
+        # self.dropout = nn.Dropout(dropout)
+        # Classification head
+        self.classifier = nn.Sequential(
+            
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            # nn.BatchNorm1d(prev_dim),
+            # nn.Dropout(dropout),
+            nn.Linear(prev_dim, 128),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(128, num_classes)
+        )
+
+    def forward(self, x):
+        # CNN forward
+        cnn_feat = self.cnn.features(x)  # (B, 1408, 9, 9)
+        # ViT forward
+        trans_feat = self.transformer.forward_features(x)
+        
+        fused_feat = self.attention(trans_feat, cnn_feat)  # (B, 1)
+
+        # MLP + output
+        # x = self.mlp(fused_feat)
+        return self.classifier(fused_feat)
+
+class Hybrid1Model(nn.Module):
+    def __init__(self, num_classes, hidden_layer_sizes):
+        super().__init__()
+        self.transformer = timm.create_model("tiny_vit_21m_224.dist_in22k_ft_in1k", pretrained=True, num_classes=0)
+        trans_prev_dim = 576
+        self.cnn = getattr(torchvision.models, f"efficientnet_b0")(weights="DEFAULT")
+        cnn_prev_dim = self.cnn.classifier[-1].in_features
+        self.cnn.classifier = nn.Identity()
+        # concat
+        # prev_dim = transformer_prev_dim + cnn_prev_dim
+        prev_dim = cnn_prev_dim
+        self.layer_norm = nn.LayerNorm(prev_dim)
+        layers = []
+        dropout = 0.2
+        self.attention = CrossAttention(cnn_dim=trans_prev_dim, trans_dim=cnn_prev_dim)
+        # for size in hidden_layer_sizes:
+        #     fc = nn.Linear(prev_dim, size)
+        #     nn.init.kaiming_uniform_(fc.weight)
+        #     layers.append(fc)
+        #     layers.append(nn.ReLU())
+        #     layers.append(nn.BatchNorm1d(size))
+        #     layers.append(nn.Dropout(dropout))
+        #     prev_dim = size
+        # self.mlp = nn.Sequential(*layers) if layers else nn.Identity()
+        # self.dropout = nn.Dropout(dropout)
+        # Classification head
+        self.classifier = nn.Sequential(
+            
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            # nn.BatchNorm1d(prev_dim),
+            # nn.Dropout(dropout),
+            nn.Linear(prev_dim, 128),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(128, num_classes)
+        )
+
+    def forward(self, x):
+        # CNN forward
+        cnn_feat = self.cnn.features(x)  # (B, 1408, 9, 9)
+        # ViT forward
+        trans_feat = self.transformer.forward_features(x)
+        
+        fused_feat = self.attention(trans_feat, cnn_feat)  # (B, 1)
+
+        # MLP + output
+        # x = self.mlp(fused_feat)
+        return self.classifier(fused_feat)
+
 class HybridModel(nn.Module):
     def __init__(self, num_classes, hidden_layer_sizes):
         super().__init__()
         self.transformer = timm.create_model("tiny_vit_21m_224.dist_in22k_ft_in1k", pretrained=True, num_classes=0)
-        transformer_prev_dim = 576
-        self.cnn = getattr(torchvision.models, f"efficientnet_b2")(weights="DEFAULT")
+        trans_prev_dim = 576
+        self.cnn = getattr(torchvision.models, f"efficientnet_b0")(weights="DEFAULT")
         cnn_prev_dim = self.cnn.classifier[-1].in_features
         self.cnn.classifier = nn.Identity()
         # concat
-        prev_dim = transformer_prev_dim + cnn_prev_dim
+        # prev_dim = transformer_prev_dim + cnn_prev_dim
+        prev_dim = trans_prev_dim
         self.layer_norm = nn.LayerNorm(prev_dim)
-        self.layer_norm_cnn = nn.LayerNorm(cnn_prev_dim)
-        self.layer_norm_transformer = nn.LayerNorm(transformer_prev_dim)
         layers = []
         dropout = 0.2
-        for size in hidden_layer_sizes:
-            fc = nn.Linear(prev_dim, size)
-            nn.init.kaiming_uniform_(fc.weight)
-            layers.append(fc)
-            layers.append(nn.ReLU())
-            layers.append(nn.BatchNorm1d(size))
-            layers.append(nn.Dropout(dropout))
-            prev_dim = size
-        self.mlp = nn.Sequential(*layers) if layers else nn.Identity()
-        self.dropout = nn.Dropout(dropout)
-        self.output = nn.Linear(in_features=prev_dim, out_features=num_classes)
-        nn.init.kaiming_uniform_(self.output.weight)
+        self.attention = CrossAttention(cnn_dim=cnn_prev_dim, trans_dim=trans_prev_dim)
+        # for size in hidden_layer_sizes:
+        #     fc = nn.Linear(prev_dim, size)
+        #     nn.init.kaiming_uniform_(fc.weight)
+        #     layers.append(fc)
+        #     layers.append(nn.ReLU())
+        #     layers.append(nn.BatchNorm1d(size))
+        #     layers.append(nn.Dropout(dropout))
+        #     prev_dim = size
+        # self.mlp = nn.Sequential(*layers) if layers else nn.Identity()
+        # self.dropout = nn.Dropout(dropout)
+        # Classification head
+        self.classifier = nn.Sequential(
+            
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            # nn.BatchNorm1d(prev_dim),
+            # nn.Dropout(dropout),
+            nn.Linear(prev_dim, 128),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(128, num_classes)
+        )
 
     def forward(self, x):
-        x_1 = self.transformer(x)
-        x_2 = self.cnn(x)
-        # x_1 = self.layer_norm_transformer(x_1)
-        # x_2 = self.layer_norm_cnn(x_2)
-        x = torch.cat((x_1, x_2), dim=1)
-        x = self.layer_norm(x)
-        x = self.mlp(x)
-        x = self.dropout(x)
-        x = self.output(x)
-        return x
+        # CNN forward
+        cnn_feat = self.cnn.features(x)  # (B, 1408, 9, 9)
+        # ViT forward
+        trans_feat = self.transformer.forward_features(x)
+        
+        fused_feat = self.attention(cnn_feat, trans_feat)  # (B, 1)
+
+        # MLP + output
+        # x = self.mlp(fused_feat)
+        return self.classifier(fused_feat)
 
 class MedVisiontransformer(nn.Module):
     def __init__(self, num_classes, suffix: str = "small", weights="DEFAULT"):

@@ -18,10 +18,12 @@ from .networks import (
     MedVisiontransformer,
     TimmModel,
     HybridModel,
+    Hybrid1Model,
+    Hybrid2Model,
     )
 
 
-def get_network(network_name: str, num_classes: int, task="binary", hidden_layer_sizes=[]):
+def get_network(network_name: str, num_classes: int, task="binary", hidden_layer_sizes=[512, 128]):
     # pattern = re.compile(rf"{network_name}$", flags=re.I)
     # match = [valid_network_name for valid_network_name in networks.__all__ if pattern.match(valid_network_name)]
     # if not match:
@@ -78,7 +80,17 @@ def get_network(network_name: str, num_classes: int, task="binary", hidden_layer
     elif re.match("^hybrid", network_name, flags=re.I):
         return HybridModel(
             num_classes=num_classes,
-            hidden_layer_sizes = [],
+            hidden_layer_sizes = hidden_layer_sizes,
+        )
+    elif re.match("^aaa", network_name, flags=re.I):
+        return Hybrid1Model(
+            num_classes=num_classes,
+            hidden_layer_sizes = hidden_layer_sizes,
+        )
+    elif re.match("^bbb", network_name, flags=re.I):
+        return Hybrid2Model(
+            num_classes=num_classes,
+            hidden_layer_sizes = hidden_layer_sizes,
         )
     # elif re.match("^vit", network_name, flags=re.I):
     #     return VisionTransformer(

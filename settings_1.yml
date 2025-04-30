@@ -10,14 +10,14 @@ test_len: 0.2
 num_workers: 12
 batch_size: 32
 
-network: efficientnet_b2
+network: swinv2_tiny_window16_256.ms_in1k
 optimizer: adam
 lr: 0.001
 use_pos_weight: true
 
 max_epochs: 150
-metrics: [auroc, accuracy, precision, recall, f1score]
+metrics: [averageprecision, f1score]
 monitor_metric: f1score
 patience: 30
 
-logger: tensorboard
+logger: wandb

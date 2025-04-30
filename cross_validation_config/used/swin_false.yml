@@ -1,0 +1,20 @@
+# path to the data directory
+file_extension: dcm
+data_dir: ./data/XR_DICOM
+out_dir: ./outputs
+
+n_splits: 5
+
+num_workers: 11
+batch_size: 32
+
+network: swin_base_patch4_window7_224.ms_in22k_ft_in1k
+optimizer: adam
+lr: 0.001
+use_pos_weight: false
+
+max_epochs: 50
+metrics: [averageprecision, f1score, precision, recall]
+monitor_metric: f1score
+
+logger: wandb

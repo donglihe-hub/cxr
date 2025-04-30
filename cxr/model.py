@@ -43,7 +43,7 @@ class CXRModule(L.LightningModule):
         preds = self(x)
         loss = self.loss_fn(preds, y)
         self.log("train_loss", loss, prog_bar=True)
-        self.log_dict(self.train_metrics(torch.sigmoid(preds), y))
+        self.log_dict(self.train_metrics(torch.sigmoid(preds), y.int()))
         return loss
 
     def on_train_epoch_end(self):
@@ -56,7 +56,7 @@ class CXRModule(L.LightningModule):
         preds = self(x)
         loss = self.loss_fn(preds, y)
         self.log("val_loss", loss)
-        self.val_metrics.update(torch.sigmoid(preds), y)
+        self.val_metrics.update(torch.sigmoid(preds), y.int())
 
     def on_validation_epoch_end(self):
         self.log_dict(self.val_metrics.compute(), prog_bar=True)
@@ -73,7 +73,7 @@ class CXRModule(L.LightningModule):
         if "loss" in self.metric_names:
             self.log("test_loss", loss)
 
-        self.test_metrics.update(torch.sigmoid(preds), y)
+        self.test_metrics.update(torch.sigmoid(preds), y.int())
 
     def on_test_epoch_end(self):
         self.log_dict(self.test_metrics.compute())
